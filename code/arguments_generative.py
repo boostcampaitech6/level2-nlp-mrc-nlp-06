@@ -97,7 +97,7 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=10,
+        default=50,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
@@ -108,9 +108,9 @@ class DataTrainingArguments:
 # config에서 바꾸기
 class CustomizedTrainingArguments(Seq2SeqTrainingArguments):
     def __init__(self, output_dir=OUTPUT_PATH, *args, **kwargs):
-        kwargs["do_train"] = False
-        kwargs["do_eval"] = False
-        kwargs["do_predict"] = True
+        kwargs["do_train"] = True
+        kwargs["do_eval"] = True
+        kwargs["do_predict"] = False
         kwargs["predict_with_generate"] = True
         kwargs["report_to"] = "wandb"
         kwargs["num_train_epochs"] = 30
@@ -121,6 +121,8 @@ class CustomizedTrainingArguments(Seq2SeqTrainingArguments):
         kwargs["metric_for_best_model"] = "eval_exact_match"
         kwargs["greater_is_better"] = True
         kwargs["load_best_model_at_end"] = True
+        kwargs["per_device_train_batch_size"] = 16
+        kwargs["per_device_eval_batch_size"] = 16
 
         # 부모 클래스의 __init__ 호출
         super().__init__(output_dir, *args, **kwargs)

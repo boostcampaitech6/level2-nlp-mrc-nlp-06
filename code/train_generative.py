@@ -70,8 +70,8 @@ def main():
     print(f'## WANDB RUN NAME : {training_args.run_name} ##')
 
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
-    # training_args.per_device_train_batch_size = 4
-    # print(training_args.per_device_train_batch_size)
+    
+    print(training_args.per_device_train_batch_size)
 
 
     print(f"model is from {model_args.model_name_or_path}")
@@ -91,7 +91,6 @@ def main():
     set_seed(training_args.seed)
 
     datasets = load_from_disk(data_args.dataset_name)
-    print(datasets)
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
@@ -131,6 +130,8 @@ def main():
     )
 
     print('## training_args', training_args)
+    print("## model args", model_args)
+    print('## data args', data_args)
 
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
