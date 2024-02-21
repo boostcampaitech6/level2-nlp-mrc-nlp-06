@@ -13,7 +13,6 @@ from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
     DataCollatorForSeq2Seq,
-    EvalPrediction,
     HfArgumentParser,
     set_seed,
     Seq2SeqTrainer,
@@ -276,10 +275,7 @@ def run_mrc(
         if isinstance(preds, tuple):
             preds = preds[0]
         
-        # print(f'## preds, labels : {preds.shape}, {labels.shape}')
-        # print('preds : ', preds)
-        # print('labels : ', labels)
-        # 새로운 방법!
+        # overflowerror 방지
         preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
 

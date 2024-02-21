@@ -34,6 +34,13 @@ class ModelArguments:
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
+    prefix: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "result file prefix name"
+        },
+    )
+
 
 
 @dataclass
@@ -98,11 +105,12 @@ class DataTrainingArguments:
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
-
+# config에서 바꾸기
 class CustomizedTrainingArguments(Seq2SeqTrainingArguments):
     def __init__(self, output_dir=OUTPUT_PATH, *args, **kwargs):
-        kwargs["do_train"] = True
-        kwargs["do_eval"] = True
+        kwargs["do_train"] = False
+        kwargs["do_eval"] = False
+        kwargs["do_predict"] = True
         kwargs["predict_with_generate"] = True
         kwargs["report_to"] = "wandb"
         kwargs["num_train_epochs"] = 30
@@ -112,7 +120,6 @@ class CustomizedTrainingArguments(Seq2SeqTrainingArguments):
         kwargs["evaluation_strategy"] = "epoch"
         kwargs["metric_for_best_model"] = "eval_exact_match"
         kwargs["greater_is_better"] = True
-
         kwargs["load_best_model_at_end"] = True
 
         # 부모 클래스의 __init__ 호출

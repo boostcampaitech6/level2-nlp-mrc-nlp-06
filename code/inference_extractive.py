@@ -8,9 +8,10 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 import logging
 import sys
 from typing import Callable, Dict, List, NoReturn, Tuple
+import os
 
 import numpy as np
-from arguments import DataTrainingArguments, ModelArguments
+from arguments_extractive import DataTrainingArguments, ModelArguments
 from datasets import (
     Dataset,
     DatasetDict,
@@ -35,6 +36,12 @@ from transformers import (
 from utils_qa import check_no_error, postprocess_qa_predictions
 
 logger = logging.getLogger(__name__)
+
+# cache path 추가
+CACHE_PATH = "/data/ephemeral/level2-nlp-mrc-nlp-06/cache"
+if not os.path.exists(CACHE_PATH):
+    os.makedirs(CACHE_PATH)
+
 
 
 def main():
@@ -73,17 +80,20 @@ def main():
         model_args.config_name
         if model_args.config_name
         else model_args.model_name_or_path,
+        cache_dir=CACHE_PATH
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
         if model_args.tokenizer_name
         else model_args.model_name_or_path,
         use_fast=True,
+        cache_dir=CACHE_PATH
     )
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
+        cache_dir=CACHE_PATH
     )
 
     # True일 경우 : run passage retrieval

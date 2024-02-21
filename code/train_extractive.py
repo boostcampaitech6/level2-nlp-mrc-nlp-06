@@ -20,7 +20,7 @@ from transformers import (
     EarlyStoppingCallback
 )
 
-from utils_qa import check_no_error, postprocess_qa_predictions
+from utils_qa_extractive import check_no_error, postprocess_qa_predictions
 
 import wandb
 wandb.login()

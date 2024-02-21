@@ -18,7 +18,6 @@ random.seed(seed) # python random seed 고정
 np.random.seed(seed) # numpy random seed 고정
 
 
-
 @contextmanager
 def timer(name):
     t0 = time.time()
@@ -30,7 +29,7 @@ class SparseRetrieval:
     def __init__(
         self,
         tokenize_fn,
-        data_path: Optional[str] = "../data/",
+        data_path: Optional[str] = "/data/ephemeral/level2-nlp-mrc-nlp-06/data/",
         context_path: Optional[str] = "wikipedia_documents.json",
     ) -> NoReturn:
 

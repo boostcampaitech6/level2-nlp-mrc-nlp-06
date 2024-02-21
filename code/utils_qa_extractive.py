@@ -25,7 +25,7 @@ from typing import Any, Optional, Tuple
 
 import numpy as np
 import torch
-from arguments import DataTrainingArguments, ModelArguments
+from arguments_extractive import DataTrainingArguments, ModelArguments
 from datasets import DatasetDict
 from tqdm.auto import tqdm
 from transformers import PreTrainedTokenizerFast, TrainingArguments, is_torch_available
