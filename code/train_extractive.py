@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from typing import NoReturn
 
-from arguments import DataTrainingArguments, ModelArguments, CustomizedTrainingArguments
+from arguments_extractive import DataTrainingArguments, ModelArguments, CustomizedTrainingArguments
 from datasets import DatasetDict, load_from_disk, load_metric
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
