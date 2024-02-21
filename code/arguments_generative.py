@@ -3,7 +3,7 @@ from typing import Optional
 from transformers import Seq2SeqTrainingArguments
 import os
 
-OUTPUT_PATH = "/data/ephemeral/level2-nlp-mrc-nlp-06/outputs"
+OUTPUT_PATH = "/data/ephemeral/level2-nlp-mrc-nlp-06/outputs_faiss_large"
 
 if not os.path.exists(OUTPUT_PATH):
     os.makedirs(OUTPUT_PATH)
@@ -17,7 +17,7 @@ class ModelArguments:
 
     model_name_or_path: str = field(
         # 실습에서 사용된 모델
-        default="paust/pko-t5-base",
+        default="paust/pko-t5-large",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
@@ -121,8 +121,8 @@ class CustomizedTrainingArguments(Seq2SeqTrainingArguments):
         kwargs["metric_for_best_model"] = "eval_exact_match"
         kwargs["greater_is_better"] = True
         kwargs["load_best_model_at_end"] = True
-        kwargs["per_device_train_batch_size"] = 16
-        kwargs["per_device_eval_batch_size"] = 16
+        kwargs["per_device_train_batch_size"] = 8
+        kwargs["per_device_eval_batch_size"] = 8
 
         # 부모 클래스의 __init__ 호출
         super().__init__(output_dir, *args, **kwargs)

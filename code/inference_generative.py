@@ -20,7 +20,7 @@ from datasets import (
     load_from_disk,
     load_metric,
 )
-from retrieval import SparseRetrieval
+from retrieval_generative import SparseRetrieval
 from transformers import (
     AutoConfig,
     AutoModelForSeq2SeqLM,
@@ -34,6 +34,8 @@ from transformers import (
 from tqdm import tqdm
 import collections
 from utils_qa_generative import check_no_error
+
+
 import nltk
 nltk.download('punkt')
 
@@ -54,12 +56,16 @@ def main():
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    training_args.do_predict = True
-    training_args.do_eval = False
+    training_args.do_predict = False
+    training_args.do_eval = True
     training_args.do_train = False
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
+
+    print('## model_args', model_args)
+    print('## data_args', data_args)
+    print('## training_args', training_args)
 
     # logging 설정
     logging.basicConfig(
@@ -75,7 +81,6 @@ def main():
     set_seed(training_args.seed)
 
     datasets = load_from_disk(data_args.dataset_name)
-    print(datasets)
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
@@ -92,6 +97,7 @@ def main():
         use_fast=True,
         cache_dir=CACHE_PATH
     )
+    # 체크포인트에서 불러오기
     model = AutoModelForSeq2SeqLM.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -112,8 +118,7 @@ def main():
         datasets = run_sparse_retrieval(
             tokenizer.tokenize, datasets, training_args, data_args,
         )
-
-    print('## training_args', training_args)
+    
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
@@ -123,7 +128,7 @@ def main():
 def run_sparse_retrieval(
     tokenize_fn: Callable[[str], List[str]],
     datasets: DatasetDict,
-    training_args: TrainingArguments,
+    training_args: CustomizedTrainingArguments,
     data_args: DataTrainingArguments,
     data_path: str = "/data/ephemeral/level2-nlp-mrc-nlp-06/data/",
     context_path: str = "wikipedia_documents.json",
@@ -134,7 +139,7 @@ def run_sparse_retrieval(
         tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
     )
     retriever.get_sparse_embedding()
-
+    
     if data_args.use_faiss:
         retriever.build_faiss(num_clusters=data_args.num_clusters)
         df = retriever.retrieve_faiss(
@@ -142,6 +147,8 @@ def run_sparse_retrieval(
         )
     else:
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+
+    print('### df : ', df.head())
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
@@ -157,20 +164,18 @@ def run_sparse_retrieval(
     elif training_args.do_eval:
         f = Features(
             {
-                "answers": Sequence(
-                    feature={
-                        "text": Value(dtype="string", id=None),
-                        "answer_start": Value(dtype="int32", id=None),
-                    },
-                    length=-1,
-                    id=None,
-                ),
+                "answers": Value(dtype="string", id=None),
                 "context": Value(dtype="string", id=None),
+                "original_context": Value(dtype="string", id=None),
                 "id": Value(dtype="string", id=None),
                 "question": Value(dtype="string", id=None),
             }
         )
+        print('### retrieved df : ', df.head())
+        print(Dataset.from_pandas(df, features=f))
+
     datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+    print("## Retrieved datasets : ", datasets)
     return datasets
 
 
@@ -193,8 +198,7 @@ def run_mrc(
 
     # Validation preprocessing / 전처리를 진행합니다.
     def prepare_validation_features(examples):
-        # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
-        # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
+        # 탐색 완료한 examples 반환
         inputs = [f"question: {q}  context: {c} </s>" for q, c in zip(examples["question"], examples["context"])]
         
         model_inputs = tokenizer(
@@ -206,7 +210,7 @@ def run_mrc(
 
         # evaluation인 경우 target이 존재함
         if training_args.do_eval:
-            targets = [f'{a["text"][0]} </s>' for a in examples['answers']]
+            targets = [f'{a} </s>' for a in examples['answers']]
             labels = tokenizer(
                 text_target=targets,
                 truncation=True,
@@ -217,10 +221,12 @@ def run_mrc(
 
 
         model_inputs["example_id"] = []
-        print('## shape check : ', len(model_inputs), len(model_inputs["input_ids"]))
+        # print('## shape check : ', len(model_inputs), len(model_inputs["input_ids"]))
 
         for i in range(len(model_inputs["input_ids"])):
             model_inputs["example_id"].append(examples["id"][i])
+            
+        # print('## model inputs : ', model_inputs)
 
         return model_inputs
 
@@ -257,7 +263,8 @@ def run_mrc(
 
         return preds, labels
 
-    metric = load_metric("squad")
+    # data input 바꿔줌
+    metric = load_metric('/data/ephemeral/level2-nlp-mrc-nlp-06/code/squad_generative.py')
 
     def compute_metrics(eval_preds):
         preds, labels = eval_preds
@@ -275,7 +282,7 @@ def run_mrc(
         # postprocess 진행
         # 여기서 do_predict, do_eval에 따라 처리 다르게!
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
-        print(f'decoded preds: {decoded_preds}, labels: {decoded_labels}')
+        # print(f'### decoded preds: {decoded_preds}, labels: {decoded_labels}')
         
         formatted_predictions = [{"id": ex["id"], "prediction_text": decoded_preds[i]} for i, ex in enumerate(datasets["validation"])]
 
@@ -286,6 +293,8 @@ def run_mrc(
         # eval 후 metric 반환
         elif training_args.do_eval:
             references = [{"id": ex["id"], "answers": ex["answers"]} for ex in datasets["validation"]]
+            print(f"## predictions : {formatted_predictions}, references : {references}")
+            # squad 바꿔줬음
             result = metric.compute(predictions=formatted_predictions, references=references)
             return {"eval_exact_match": result['exact_match'], "eval_f1": result['f1']}
 
@@ -311,28 +320,24 @@ def run_mrc(
         pred = pred.replace("context", "") # context 제거
         pred = pred.replace(":", "") # 문장부호 제거
         pred = pred.replace(".", "") # 문장부호 제거
+        pred = pred.replace("\"", "") # 문장부호 제거
         pred = pred.strip() # 좌우 공백 제거
         return pred
 
     # prediction 진행
     if training_args.do_predict:
+        # 학습된 것을 바탕으로 predict 진행
         encoded_predictions = trainer.predict(
             test_dataset=eval_dataset
         )
-        # print('### encoded predictions : ', encoded_predictions)
-        # print('### predictions shape', encoded_predictions.predictions)
-        # print('### eval_dataset : ', eval_dataset)
-        # print('### eval_dataset id : ', eval_dataset['example_id'])
 
         # prediction, nbest에 해당하는 OrderedDict 생성합니다.
         all_predictions = collections.OrderedDict()
 
         # sentence에 대한 decoding 진행
         for idx, sample_id in enumerate(tqdm(eval_dataset['example_id'], desc="decoding")):
-            print('## sample id : ', sample_id)
             all_predictions[sample_id] = generate_answer(encoded_predictions.predictions[idx])
 
-        print('### decoded predictions : ', all_predictions)      
 
         # prediction 저장
         # output_dir이 있으면 모든 dicts를 저장합니다.
@@ -341,7 +346,7 @@ def run_mrc(
 
             prediction_file = os.path.join(
                 training_args.output_dir,
-                "predictions.json" if model_args.prefix is None else f"predictions_{model_args.prefix}".json,
+                "predictions.json" if model_args.prefix is None else f"predictions_{model_args.prefix}.json",
             )
 
             with open(prediction_file, "w", encoding="utf-8") as writer:
@@ -360,8 +365,6 @@ def run_mrc(
 
         trainer.log_metrics("test", metrics)
         trainer.save_metrics("test", metrics)
-
-    
 
 
 if __name__ == "__main__":
