@@ -64,7 +64,11 @@ def evaluate(dataset, predictions):
                     continue
                 ground_truths = qa["answers"]
                 prediction = predictions[qa["id"]]
-                print(f"### ground truth : {ground_truths}, prediction : {prediction}")
+
+                if type(ground_truths) == dict:
+                    ground_truths = ground_truths['text'][0]
+                    
+                print(f"### ground truth : {normalize_answer(ground_truths)}, prediction : {normalize_answer(prediction)}")
                 exact_match += exact_match_score(prediction, ground_truths)
                 f1 += f1_score(prediction, ground_truths)
 

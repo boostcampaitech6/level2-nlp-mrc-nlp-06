@@ -142,7 +142,7 @@ class SparseRetrieval:
 
     #### 수정할 파트 #### 
     def retrieve(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 40
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -207,7 +207,7 @@ class SparseRetrieval:
             cqas = pd.DataFrame(total)
             return cqas
 
-    def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
+    def get_relevant_doc(self, query: str, k: Optional[int] = 40) -> Tuple[List, List]:
 
         """
         Arguments:
@@ -236,7 +236,7 @@ class SparseRetrieval:
         return doc_score, doc_indices
 
     def get_relevant_doc_bulk(
-        self, queries: List, k: Optional[int] = 1
+        self, queries: List, k: Optional[int] = 40
     ) -> Tuple[List, List]:
 
         """

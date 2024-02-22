@@ -3,7 +3,7 @@ from typing import Optional
 from transformers import Seq2SeqTrainingArguments
 import os
 
-OUTPUT_PATH = "/data/ephemeral/level2-nlp-mrc-nlp-06/outputs_faiss_large"
+OUTPUT_PATH = "/data/ephemeral/level2-nlp-mrc-nlp-06/outputs_large"
 
 if not os.path.exists(OUTPUT_PATH):
     os.makedirs(OUTPUT_PATH)
@@ -99,7 +99,7 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=20,
+        default=40,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },

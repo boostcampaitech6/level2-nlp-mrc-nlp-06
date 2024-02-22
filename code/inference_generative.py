@@ -281,9 +281,6 @@ def run_mrc(
         preds = [pred.strip() for pred in preds]
         labels = [label.strip() for label in labels]
 
-        # preds = ["\n".join(tokenizer(pred)) for pred in preds]
-        # labels = ["\n".join(tokenizer(label)) for label in labels]
-
         return preds, labels
 
     # data input 바꿔줌
@@ -295,7 +292,6 @@ def run_mrc(
         if isinstance(preds, tuple):
             preds = preds[0]
         
-        # print('### preds and labels : ', preds.shape, labels.shape)
         # overflowerror 방지
         preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
         # print(f'## encoded preds example : {tokenizer.decode(preds[0], skip_special_tokens=True)}')

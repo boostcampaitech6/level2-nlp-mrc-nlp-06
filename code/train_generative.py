@@ -146,6 +146,11 @@ def run_mrc(
     )
 
     def clean_text(sentence):
+        if type(sentence) == dict:
+            print("## Sentence : ", sentence)
+            sentence = sentence["text"][0]
+            print("## Changed Sentence : ", sentence)
+            
         sentence = sentence.replace("\\n", "") # 줄바꿈 제거
         sentence = sentence.replace("\n", "") # 줄바꿈 제거
         sentence = sentence.replace("\\", "") # 특수 기호
@@ -159,11 +164,12 @@ def run_mrc(
 
     # Train preprocessing / 전처리를 진행합니다.
     def prepare_train_features(examples):
-        # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
-        # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
 
         inputs = [f"question: {clean_text(q)}  context: {clean_text(c)} </s>" for q, c in zip(examples["question"], examples["context"])]
-        targets = [f'{clean_text(a)} </s>' for a in examples['answers']]
+        targets = [f"{clean_text(a)} </s>" for a in examples['answers']]
+
+        print('### input samples : ', inputs[:5])
+        print('### targets samples : ', targets[:5])
 
         model_inputs = tokenizer(
             inputs,
@@ -292,7 +298,7 @@ def run_mrc(
         # print(f'## decoded preds : {decoded_preds}, decoded labels : {decoded_labels}')
         
         formatted_predictions = [{"id": ex["id"], "prediction_text": decoded_preds[i]} for i, ex in enumerate(datasets["validation"])]
-        references = [{"id": ex["id"], "answers": ex["answers"]} for ex in datasets["validation"]]
+        references = [{"id": ex["id"], "answers": ex["answers"]["text"][0]} for ex in datasets["validation"]]
 
         
         print("### reference and prediction check ###")
@@ -357,7 +363,7 @@ def run_mrc(
 
     # Evaluation
     if training_args.do_eval:
-        print("Evaluate 진행")
+        print("## Evaluate 진행 ##")
         logger.info("*** Evaluate ***")
         metrics = trainer.evaluate()
         print('## Evaluate metrics 기록 : ', metrics)
