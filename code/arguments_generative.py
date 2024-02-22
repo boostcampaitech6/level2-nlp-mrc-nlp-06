@@ -41,6 +41,8 @@ class ModelArguments:
         },
     )
 
+    
+
 
 
 @dataclass
@@ -97,7 +99,7 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=50,
+        default=20,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
@@ -105,6 +107,14 @@ class DataTrainingArguments:
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
+    retrieval_model: Optional[str] = field(
+        default="bm25",
+        metadata={
+            "help": "Choose retrieval model"
+        },
+    )
+
+
 # config에서 바꾸기
 class CustomizedTrainingArguments(Seq2SeqTrainingArguments):
     def __init__(self, output_dir=OUTPUT_PATH, *args, **kwargs):

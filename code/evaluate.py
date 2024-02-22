@@ -62,11 +62,13 @@ def evaluate(dataset, predictions):
                     message = "Unanswered question " + qa["id"] + " will receive score 0."
                     print(message, file=sys.stderr)
                     continue
-                ground_truths = [x for x in qa["answers"]]
+                ground_truths = qa["answers"]
                 prediction = predictions[qa["id"]]
-                exact_match += metric_max_over_ground_truths(exact_match_score, prediction, ground_truths)
-                f1 += metric_max_over_ground_truths(f1_score, prediction, ground_truths)
+                print(f"### ground truth : {ground_truths}, prediction : {prediction}")
+                exact_match += exact_match_score(prediction, ground_truths)
+                f1 += f1_score(prediction, ground_truths)
 
+    print(f"### exact match : {exact_match}, f1 : {f1}, total : {total}")
     exact_match = 100.0 * exact_match / total
     f1 = 100.0 * f1 / total
 

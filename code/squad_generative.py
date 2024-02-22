@@ -72,7 +72,9 @@ class Squad(datasets.Metric):
             inputs_description=_KWARGS_DESCRIPTION,
             features=datasets.Features(
                 {
-                    "predictions": {"id": datasets.Value("string"), "prediction_text": datasets.Value("string")},
+                    "predictions": {"id": datasets.Value("string"), 
+                                    "prediction_text": datasets.Value("string")
+                    },
                     "references": {
                         "id": datasets.Value("string"),
                         "answers": datasets.Value("string"),
@@ -91,8 +93,8 @@ class Squad(datasets.Metric):
                     {
                         "qas": [
                             {
-                                "answers": ref["answers"],
                                 "id": ref["id"],
+                                "answers": ref["answers"],
                             }
                             for ref in references
                         ]

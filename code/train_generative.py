@@ -21,10 +21,6 @@ from transformers import (
 
 from utils_qa_generative import check_no_error
 
-
-import nltk
-nltk.download('punkt')
-
 # wandb
 import wandb
 wandb.login()
@@ -70,8 +66,6 @@ def main():
     print(f'## WANDB RUN NAME : {training_args.run_name} ##')
 
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
-    
-    print(training_args.per_device_train_batch_size)
 
 
     print(f"model is from {model_args.model_name_or_path}")
@@ -121,14 +115,6 @@ def main():
         cache_dir=CACHE_PATH
     )
 
-    print(
-        type(training_args),
-        type(model_args),
-        type(datasets),
-        type(tokenizer),
-        type(model),
-    )
-
     print('## training_args', training_args)
     print("## model args", model_args)
     print('## data args', data_args)
@@ -159,13 +145,25 @@ def run_mrc(
         data_args, training_args, datasets, tokenizer
     )
 
+    def clean_text(sentence):
+        sentence = sentence.replace("\\n", "") # 줄바꿈 제거
+        sentence = sentence.replace("\n", "") # 줄바꿈 제거
+        sentence = sentence.replace("\\", "") # 특수 기호
+        sentence = sentence.replace("context", "") # context 제거
+        sentence = sentence.replace(":", "") # 문장부호 제거
+        sentence = sentence.replace(".", "") # 문장부호 제거
+        sentence = sentence.replace("\"", "") # 문장부호 제거
+        sentence = sentence.strip() # 좌우 공백 제거
+
+        return sentence
+
     # Train preprocessing / 전처리를 진행합니다.
     def prepare_train_features(examples):
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
 
-        inputs = [f"question: {q}  context: {c} </s>" for q, c in zip(examples["question"], examples["context"])]
-        targets = [f'{a["text"][0]} </s>' for a in examples['answers']]
+        inputs = [f"question: {clean_text(q)}  context: {clean_text(c)} </s>" for q, c in zip(examples["question"], examples["context"])]
+        targets = [f'{clean_text(a)} </s>' for a in examples['answers']]
 
         model_inputs = tokenizer(
             inputs,
@@ -186,12 +184,15 @@ def run_mrc(
 
         for i in range(len(model_inputs["labels"])):
             model_inputs["example_id"].append(examples["id"][i])
+        
+        print('### model inputs : ', model_inputs.keys())
 
         return model_inputs
 
     if training_args.do_train:
         if "train" not in datasets:
             raise ValueError("--do_train requires a train dataset")
+        
         train_dataset = datasets["train"]
 
         # dataset에서 train feature를 생성합니다.
@@ -208,8 +209,8 @@ def run_mrc(
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
 
-        inputs = [f"question: {q}  context: {c} </s>" for q, c in zip(examples["question"], examples["context"])]
-        targets = [f'{a["text"][0]} </s>' for a in examples['answers']]
+        inputs = [f"question: {clean_text(q)}  context: {clean_text(c)} </s>" for q, c in zip(examples["question"], examples["context"])]
+        targets = [f'{clean_text(a)} </s>' for a in examples['answers']]
 
         model_inputs = tokenizer(
             inputs,
@@ -230,6 +231,8 @@ def run_mrc(
 
         for i in range(len(model_inputs["labels"])):
             model_inputs["example_id"].append(examples["id"][i])
+
+        print('### model inputs : ', model_inputs.keys())
 
         return model_inputs
 
@@ -258,21 +261,21 @@ def run_mrc(
     )
 
     # Post-processing:
-    # nltk를 이용한 간단한 후처리 진행
     def postprocess_text(preds, labels):
         preds = [pred.strip() for pred in preds]
         labels = [label.strip() for label in labels]
 
-        preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
-        labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
+        # preds = ["\n".join(tokenizer(pred)) for pred in preds]
+        # labels = ["\n".join(tokenizer(label)) for label in labels]
 
         return preds, labels
 
 
-    metric = load_metric("squad")
+    metric = load_metric('/data/ephemeral/level2-nlp-mrc-nlp-06/code/squad_generative.py')
 
     def compute_metrics(eval_preds):
         preds, labels = eval_preds
+
         if isinstance(preds, tuple):
             preds = preds[0]
         
@@ -286,14 +289,24 @@ def run_mrc(
         
         # postprocess 진행
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
-        print(f'decoded preds: {decoded_preds}, labels: {decoded_labels}')
+        # print(f'## decoded preds : {decoded_preds}, decoded labels : {decoded_labels}')
+        
         formatted_predictions = [{"id": ex["id"], "prediction_text": decoded_preds[i]} for i, ex in enumerate(datasets["validation"])]
         references = [{"id": ex["id"], "answers": ex["answers"]} for ex in datasets["validation"]]
 
+        
+        print("### reference and prediction check ###")
+        for idx, id in enumerate(datasets["validation"]["id"]):
+            print(f"### ID : {id} ###")
+            print(f"### ref : {references[idx]}, pred : {formatted_predictions[idx]}")
+
+        print('### Check finished! ###')
+        # squad 바꿔줬음
         result = metric.compute(predictions=formatted_predictions, references=references)
 
         return {"eval_exact_match": result['exact_match'], "eval_f1": result['f1']}
 
+    print("init trainer...")
     # Trainer 초기화
     # early stopping 추가
     # postprocess 따로 진행해줘야 함
@@ -308,6 +321,7 @@ def run_mrc(
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
     
+    logger.info("*** Train ***")
     
     # epoch 마다 validation 진행
     if training_args.do_train:

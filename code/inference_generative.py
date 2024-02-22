@@ -8,6 +8,7 @@ import logging
 import sys, os
 import json
 from typing import Callable, Dict, List, NoReturn, Tuple
+import wandb
 
 import numpy as np
 from arguments_generative import DataTrainingArguments, ModelArguments, CustomizedTrainingArguments
@@ -21,6 +22,8 @@ from datasets import (
     load_metric,
 )
 from retrieval_generative import SparseRetrieval
+from retrieval_BM25 import BM25SparseRetrieval
+
 from transformers import (
     AutoConfig,
     AutoModelForSeq2SeqLM,
@@ -35,11 +38,12 @@ from tqdm import tqdm
 import collections
 from utils_qa_generative import check_no_error
 
-
-import nltk
-nltk.download('punkt')
-
 logger = logging.getLogger(__name__)
+
+# wandb project 설정
+os.environ["WANDB_ENTITY"] = "be-our-friend"
+os.environ["WANDB_PROJECT"] = "MRC_HYW"
+
 
 # cache path 추가
 CACHE_PATH = "/data/ephemeral/level2-nlp-mrc-nlp-06/cache"
@@ -55,7 +59,9 @@ def main():
         (ModelArguments, DataTrainingArguments, CustomizedTrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    print(f'## WANDB RUN NAME : {training_args.run_name} ##')
 
+    ## evaluation & predict 설정
     training_args.do_predict = False
     training_args.do_eval = True
     training_args.do_train = False
@@ -106,10 +112,7 @@ def main():
     )
 
     print(
-        type(training_args),
-        type(model_args),
-        type(datasets),
-        type(tokenizer),
+        model_args.model_name_or_path,
         type(model),
     )
 
@@ -135,9 +138,20 @@ def run_sparse_retrieval(
 ) -> DatasetDict:
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
-    retriever = SparseRetrieval(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
-    )
+    ## retrieval 정하기
+    if data_args.retrieval_model == 'tfidf':
+        retriever = SparseRetrieval(tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path)
+        print('## TF-IDF Retrieval model Selected ##')
+    
+    elif data_args.retrieval_model == 'bm25':
+        retriever = BM25SparseRetrieval(tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path)
+        print('## BM25 Retrieval model Selected ##')
+        
+    
+    else:
+        raise ValueError("Choose One of tfidf, bm25")
+
+
     retriever.get_sparse_embedding()
     
     if data_args.use_faiss:
@@ -147,8 +161,6 @@ def run_sparse_retrieval(
         )
     else:
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-
-    print('### df : ', df.head())
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
@@ -171,11 +183,9 @@ def run_sparse_retrieval(
                 "question": Value(dtype="string", id=None),
             }
         )
-        print('### retrieved df : ', df.head())
-        print(Dataset.from_pandas(df, features=f))
 
+    
     datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
-    print("## Retrieved datasets : ", datasets)
     return datasets
 
 
@@ -196,11 +206,25 @@ def run_mrc(
         data_args, training_args, datasets, tokenizer
     )
 
+    def clean_text(sentence):
+        sentence = sentence.replace("\\n", "") # 줄바꿈 제거
+        sentence = sentence.replace("\n", "") # 줄바꿈 제거
+        sentence = sentence.replace("\\", "") # 특수 기호
+        sentence = sentence.replace("context", "") # context 제거
+        sentence = sentence.replace(":", "") # 문장부호 제거
+        sentence = sentence.replace(".", "") # 문장부호 제거
+        sentence = sentence.replace("\"", "") # 문장부호 제거
+        sentence = sentence.strip() # 좌우 공백 제거
+
+        return sentence
+
     # Validation preprocessing / 전처리를 진행합니다.
     def prepare_validation_features(examples):
-        # 탐색 완료한 examples 반환
-        inputs = [f"question: {q}  context: {c} </s>" for q, c in zip(examples["question"], examples["context"])]
+        print('### prepare validation features ###')
         
+        # 탐색 완료한 examples 반환
+        inputs = [f"question: {clean_text(q)}  context: {clean_text(c)} </s>" for q, c in zip(examples["question"], examples["context"])]
+        print('## input example : ', inputs[:5])
         model_inputs = tokenizer(
             inputs,
             truncation=True,
@@ -210,7 +234,8 @@ def run_mrc(
 
         # evaluation인 경우 target이 존재함
         if training_args.do_eval:
-            targets = [f'{a} </s>' for a in examples['answers']]
+            targets = [f'{clean_text(a)} </s>' for a in examples['answers']]
+            print('## target example : ', targets[:5])
             labels = tokenizer(
                 text_target=targets,
                 truncation=True,
@@ -219,15 +244,13 @@ def run_mrc(
             )
             model_inputs["labels"] = labels["input_ids"]
 
-
         model_inputs["example_id"] = []
-        # print('## shape check : ', len(model_inputs), len(model_inputs["input_ids"]))
 
         for i in range(len(model_inputs["input_ids"])):
             model_inputs["example_id"].append(examples["id"][i])
-            
-        # print('## model inputs : ', model_inputs)
 
+        print('### model inputs : ', model_inputs.keys())
+        
         return model_inputs
 
 
@@ -258,8 +281,8 @@ def run_mrc(
         preds = [pred.strip() for pred in preds]
         labels = [label.strip() for label in labels]
 
-        preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
-        labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
+        # preds = ["\n".join(tokenizer(pred)) for pred in preds]
+        # labels = ["\n".join(tokenizer(label)) for label in labels]
 
         return preds, labels
 
@@ -268,22 +291,26 @@ def run_mrc(
 
     def compute_metrics(eval_preds):
         preds, labels = eval_preds
+
         if isinstance(preds, tuple):
             preds = preds[0]
         
+        # print('### preds and labels : ', preds.shape, labels.shape)
         # overflowerror 방지
         preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
+        # print(f'## encoded preds example : {tokenizer.decode(preds[0], skip_special_tokens=True)}')
         decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
 
         # decoded_labels은 rouge metric을 위한 것이며, f1/em을 구할 때 사용되지 않음
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+        # print(f'## encoded labels example : {tokenizer.decode(labels[0], skip_special_tokens=True)}')
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
         
         # postprocess 진행
-        # 여기서 do_predict, do_eval에 따라 처리 다르게!
+        # print(f"## before postprocess : decoded preds : {decoded_preds}, decoded labels : {decoded_labels}")
         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
-        # print(f'### decoded preds: {decoded_preds}, labels: {decoded_labels}')
-        
+        # print(f"## after postprocess : decoded preds : {decoded_preds}, decoded labels : {decoded_labels}")
+
         formatted_predictions = [{"id": ex["id"], "prediction_text": decoded_preds[i]} for i, ex in enumerate(datasets["validation"])]
 
         # 예측값 반환
@@ -293,7 +320,13 @@ def run_mrc(
         # eval 후 metric 반환
         elif training_args.do_eval:
             references = [{"id": ex["id"], "answers": ex["answers"]} for ex in datasets["validation"]]
-            print(f"## predictions : {formatted_predictions}, references : {references}")
+
+            print("### reference and prediction check ###")
+            for idx, id in enumerate(datasets["validation"]["id"]):
+                print(f"### ID : {id} ###")
+                print(f"### ref : {references[idx]}, pred : {formatted_predictions[idx]}")
+
+            print('### Check finished! ###')
             # squad 바꿔줬음
             result = metric.compute(predictions=formatted_predictions, references=references)
             return {"eval_exact_match": result['exact_match'], "eval_f1": result['f1']}
@@ -311,18 +344,11 @@ def run_mrc(
         compute_metrics=compute_metrics,
     )
 
-    logger.info("*** Evaluate ***")
-
     def generate_answer(encode_sentence):
         pred = tokenizer.decode(encode_sentence, skip_special_tokens=True)
-        pred = pred.replace("\n", "") # 줄바꿈 제거
-        pred = pred.replace("\\n", "") # 줄바꿈 제거
-        pred = pred.replace("context", "") # context 제거
-        pred = pred.replace(":", "") # 문장부호 제거
-        pred = pred.replace(".", "") # 문장부호 제거
-        pred = pred.replace("\"", "") # 문장부호 제거
-        pred = pred.strip() # 좌우 공백 제거
+        pred = clean_text(pred)
         return pred
+
 
     # prediction 진행
     if training_args.do_predict:
@@ -337,6 +363,8 @@ def run_mrc(
         # sentence에 대한 decoding 진행
         for idx, sample_id in enumerate(tqdm(eval_dataset['example_id'], desc="decoding")):
             all_predictions[sample_id] = generate_answer(encoded_predictions.predictions[idx])
+            # print(f'### {idx} ({sample_id}) 번째 prediction / answer ###')
+            # print(f'## predicition : {all_predictions[sample_id]} || answer : {eval_dataset["answer"][idx]}')
 
 
         # prediction 저장
@@ -360,11 +388,16 @@ def run_mrc(
 
     # evaluation 하기
     if training_args.do_eval:
+        print("Evaluate 진행")
+        logger.info("*** Evaluate ***")
         metrics = trainer.evaluate()
+        # evaluation에서 반환되는 결과값을 보자
         metrics["eval_samples"] = len(eval_dataset)
 
         trainer.log_metrics("test", metrics)
         trainer.save_metrics("test", metrics)
+        wandb.log({"eval": metrics})
+
 
 
 if __name__ == "__main__":

@@ -12,7 +12,6 @@ import pandas as pd
 from datasets import Dataset, concatenate_datasets, load_from_disk
 from rank_bm25 import BM25Okapi
 from tqdm.auto import tqdm
-from omegaconf import OmegaConf
 
 from transformers import AutoTokenizer
 
@@ -28,8 +27,7 @@ class BM25SparseRetrieval:
     def __init__(
         self,
         tokenize_fn,
-        args,
-        data_path: Optional[str] = "../data/",
+        data_path: Optional[str] = "/data/ephemeral/level2-nlp-mrc-nlp-06/data/",
         context_path: Optional[str] = "wikipedia_documents.json",
     ) -> None:
         """Arguments:
@@ -64,7 +62,6 @@ class BM25SparseRetrieval:
         self.ids = list(range(len(self.contexts)))
     
         self.bm25 = None  # get_sparse_embedding()로 생성합니다
-        self.args = args
         self.indexer = None  # build_faiss()로 생성합니다.
 
     def get_sparse_embedding(self) -> None:
@@ -188,11 +185,14 @@ class BM25SparseRetrieval:
                         if "context" in example.keys() and "answers" in example.keys():
                             # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
                             tmp["original_context"] = example["context"]
-                            tmp["answers"] = example["answers"]
+                            tmp["answers"] = example["answers"]["text"][0]
                         total.append(tmp)
+
                     cqas = pd.DataFrame(total)
-                    cqas_lst.append(cqas)    
-                return doc_scores, cqas_lst       
+                    cqas_lst.append(cqas)
+                    print('## independent df : ', cqas_lst)
+                return doc_scores, cqas_lst  
+                 
             else:
                 total = []
                 for idx, example in enumerate(
@@ -205,17 +205,16 @@ class BM25SparseRetrieval:
                         # Retrieve한 Passage의 id, context를 반환합니다.
                         "context": " ".join(
                             [self.contexts[pid] for pid in doc_indices[idx]]
-                        ) if not args.train.use_sep_token_in_inference else "[SEP]".join(
-                            [self.contexts[pid] for pid in doc_indices[idx]]
-                        ),
+                        )
                     }
                     if "context" in example.keys() and "answers" in example.keys():
                         # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
                         tmp["original_context"] = example["context"]
-                        tmp["answers"] = example["answers"]
+                        tmp["answers"] = example["answers"]["text"][0]
                     total.append(tmp)
 
                 cqas = pd.DataFrame(total)
+                print('## df : ', cqas)
                 return cqas
 
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
@@ -262,156 +261,138 @@ class BM25SparseRetrieval:
         
         return doc_scores, doc_indices
 
-    def retrieve_faiss(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
-    ) -> Union[Tuple[List, List], pd.DataFrame]:
-        """Arguments:
-            query_or_dataset (Union[str, Dataset]):
-                str이나 Dataset으로 이루어진 Query를 받습니다.
-                str 형태인 하나의 query만 받으면 `get_relevant_doc`을 통해 유사도를 구합니다.
-                Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
-                이 경우 `get_relevant_doc_bulk`를 통해 유사도를 구합니다.
-            topk (Optional[int], optional): Defaults to 1.
-                상위 몇 개의 passage를 사용할 것인지 지정합니다.
+    # def retrieve_faiss(
+    #     self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+    # ) -> Union[Tuple[List, List], pd.DataFrame]:
+    #     """Arguments:
+    #         query_or_dataset (Union[str, Dataset]):
+    #             str이나 Dataset으로 이루어진 Query를 받습니다.
+    #             str 형태인 하나의 query만 받으면 `get_relevant_doc`을 통해 유사도를 구합니다.
+    #             Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
+    #             이 경우 `get_relevant_doc_bulk`를 통해 유사도를 구합니다.
+    #         topk (Optional[int], optional): Defaults to 1.
+    #             상위 몇 개의 passage를 사용할 것인지 지정합니다.
 
-        Returns:
-            1개의 Query를 받는 경우  -> Tuple(List, List)
-            다수의 Query를 받는 경우 -> pd.DataFrame: [description]
+    #     Returns:
+    #         1개의 Query를 받는 경우  -> Tuple(List, List)
+    #         다수의 Query를 받는 경우 -> pd.DataFrame: [description]
 
-        Note:
-            다수의 Query를 받는 경우,
-                Ground Truth가 있는 Query (train/valid) -> 기존 Ground Truth Passage를 같이 반환합니다.
-                Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
-            retrieve와 같은 기능을 하지만 faiss.indexer를 사용합니다.
-        """
+    #     Note:
+    #         다수의 Query를 받는 경우,
+    #             Ground Truth가 있는 Query (train/valid) -> 기존 Ground Truth Passage를 같이 반환합니다.
+    #             Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
+    #         retrieve와 같은 기능을 하지만 faiss.indexer를 사용합니다.
+    #     """
 
-        assert self.indexer is not None, "build_faiss()를 먼저 수행해주세요."
+    #     assert self.indexer is not None, print("build_faiss()를 먼저 수행해주세요.")
 
-        if isinstance(query_or_dataset, str):
-            doc_scores, doc_indices = self.get_relevant_doc_faiss(
-                query_or_dataset, k=topk
-            )
-            print("[Search query]\n", query_or_dataset, "\n")
+    #     if isinstance(query_or_dataset, str):
+    #         doc_scores, doc_indices = self.get_relevant_doc_faiss(
+    #             query_or_dataset, k=topk
+    #         )
+    #         print("[Search query]\n", query_or_dataset, "\n")
 
-            for i in range(topk):
-                print("Top-%d passage with score %.4f" % (i + 1, doc_scores[i]))
-                print(self.contexts[doc_indices[i]])
+    #         for i in range(topk):
+    #             print("Top-%d passage with score %.4f" % (i + 1, doc_scores[i]))
+    #             print(self.contexts[doc_indices[i]])
 
-            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+    #         return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
 
-        elif isinstance(query_or_dataset, Dataset):
+    #     elif isinstance(query_or_dataset, Dataset):
 
-            # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
-            queries = query_or_dataset["question"]
-            total = []
+    #         # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
+    #         queries = query_or_dataset["question"]
+    #         total = []
 
-            with timer("query faiss search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk_faiss(
-                    queries, k=topk
-                )
-            if self.args.train.use_sep_token_in_inference:
-                for idx, example in enumerate(
-                    tqdm(query_or_dataset, desc="Sparse retrieval: ")
-                ):
-                    tmp = {
-                        # Query와 해당 id를 반환합니다.
-                        "question": example["question"],
-                        "id": example["id"],
-                        # Retrieve한 Passage의 id, context를 반환합니다.
-                        "context": "[SEP]".join(
-                            [self.contexts[pid] for pid in doc_indices[idx]]
-                        ),
-                    }
-                    if "context" in example.keys() and "answers" in example.keys():
-                        # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
-                        tmp["original_context"] = example["context"]
-                        tmp["answers"] = example["answers"]
-                    total.append(tmp)
-            else:
-                for idx, example in enumerate(
-                    tqdm(query_or_dataset, desc="Sparse retrieval: ")
-                ):
-                    tmp = {
-                        # Query와 해당 id를 반환합니다.
-                        "question": example["question"],
-                        "id": example["id"],
-                        # Retrieve한 Passage의 id, context를 반환합니다.
-                        "context": " ".join(
-                            topk_doc[idx]
-                        ),
-                    }
-                    if "context" in example.keys() and "answers" in example.keys():
-                        # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
-                        tmp["original_context"] = example["context"]
-                        tmp["answers"] = example["answers"]
-                    total.append(tmp)
+    #         with timer("query faiss search"):
+    #             doc_scores, doc_indices = self.get_relevant_doc_bulk_faiss(
+    #                 queries, k=topk
+    #             )
+    #         for idx, example in enumerate(
+    #             tqdm(query_or_dataset, desc="Sparse retrieval: ")
+    #         ):
+    #                 tmp = {
+    #                     # Query와 해당 id를 반환합니다.
+    #                     "question": example["question"],
+    #                     "id": example["id"],
+    #                     # Retrieve한 Passage의 id, context를 반환합니다.
+    #                     "context": " ".join(
+    #                         [self.contexts[pid] for pid in doc_indices[idx]]
+    #                     ),
+    #                 }
 
-            return pd.DataFrame(total)
+    #                 if "context" in example.keys() and "answers" in example.keys():
+    #                     # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+    #                     tmp["original_context"] = example["context"]
+    #                     tmp["answers"] = example["answers"]["text"][0]
+    #                 total.append(tmp)
 
-    def get_relevant_doc_faiss(
-        self, query: str, k: Optional[int] = 1
-    ) -> Tuple[List, List]:
-        """Arguments:
-            query (str):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
-        """
+    #         return pd.DataFrame(total)
 
-        query_vec = self.tfidfv.transform([query])
-        assert (
-            np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+    # def get_relevant_doc_faiss(
+    #     self, query: str, k: Optional[int] = 1
+    # ) -> Tuple[List, List]:
+    #     """Arguments:
+    #         query (str):
+    #             하나의 Query를 받습니다.
+    #         k (Optional[int]): 1
+    #             상위 몇 개의 Passage를 반환할지 정합니다.
+    #     Note:
+    #         vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
+    #     """
 
-        q_emb = query_vec.toarray().astype(np.float32)
-        with timer("query faiss search"):
-            D, I = self.indexer.search(q_emb, k)
+    #     query_vec = self.bm25.get_scores(query)
+    #     assert (
+    #         np.sum(query_vec) != 0
+    #     ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
-        return D.tolist()[0], I.tolist()[0]
+    #     q_emb = query_vec.toarray().astype(np.float32)
+    #     with timer("query faiss search"):
+    #         D, I = self.indexer.search(q_emb, k)
 
-    def get_relevant_doc_bulk_faiss(
-        self, queries: List, k: Optional[int] = 1
-    ) -> Tuple[List, List]:
+    #     return D.tolist()[0], I.tolist()[0]
 
-        """
-        Arguments:
-            queries (List):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
-        """
+    # def get_relevant_doc_bulk_faiss(
+    #     self, queries: List, k: Optional[int] = 1
+    # ) -> Tuple[List, List]:
 
-        query_vecs = self.tfidfv.transform(queries)
-        assert (
-            np.sum(query_vecs) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+    #     """
+    #     Arguments:
+    #         queries (List):
+    #             하나의 Query를 받습니다.
+    #         k (Optional[int]): 1
+    #             상위 몇 개의 Passage를 반환할지 정합니다.
+    #     Note:
+    #         vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
+    #     """
 
-        q_embs = query_vecs.toarray().astype(np.float32)
-        D, I = self.indexer.search(q_embs, k)
+    #     query_vecs = self.bm25.get_scores(queries)
+    #     assert (
+    #         np.sum(query_vecs) != 0
+    #     ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
-        return D.tolist(), I.tolist()
+    #     q_embs = query_vecs.toarray().astype(np.float32)
+    #     D, I = self.indexer.search(q_embs, k)
+
+    #     return D.tolist(), I.tolist()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--dataset_name", default="/opt/ml/input/data/train_dataset", type=str, help=""
+        "--dataset_name", default="/data/ephemeral/level2-nlp-mrc-nlp-06/data/train_dataset", type=str, help=""
     )
     parser.add_argument(
         "--model_name_or_path",
-        default="bert-base-multilingual-cased",
+        default="paust/pko-t5-large",
         type=str,
         help="",
     )
-    parser.add_argument("--data_path", default="/opt/ml/input/data", type=str, help="")
+    parser.add_argument("--data_path", default="/data/ephemeral/level2-nlp-mrc-nlp-06/data", type=str, help="")
     parser.add_argument(
         "--context_path", default="wikipedia_documents.json", type=str, help=""
     )
     parser.add_argument("--use_faiss", default=False, type=bool, help="")
-    parser.add_argument("--top_k_retrieval", default=10, type=int, help="")
+    parser.add_argument("--top_k_retrieval", default=20, type=int, help="")
 
     args = parser.parse_args()
     
@@ -428,13 +409,11 @@ if __name__ == "__main__":
     print(full_ds)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=False,)
-    yaml_args = OmegaConf.load('/opt/ml/args.yaml')
     
     retriever = BM25SparseRetrieval(
         tokenize_fn=tokenizer.tokenize,
         data_path=args.data_path,
         context_path=args.context_path,
-        args=yaml_args,
     )
 
     query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
