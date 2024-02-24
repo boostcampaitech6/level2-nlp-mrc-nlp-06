@@ -21,8 +21,8 @@ from datasets import (
     load_from_disk,
     load_metric,
 )
-from retrieval_generative import SparseRetrieval
-from retrieval_BM25 import BM25SparseRetrieval
+from retrieval import SparseRetrieval
+from retrieval_bm25 import BM25SparseRetrieval
 
 from transformers import (
     AutoConfig,
@@ -36,7 +36,7 @@ from transformers import (
 )
 from tqdm import tqdm
 import collections
-from utils_qa_generative import check_no_error
+from utils_qa import check_no_error
 
 logger = logging.getLogger(__name__)
 

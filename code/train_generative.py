@@ -19,7 +19,7 @@ from transformers import (
     EarlyStoppingCallback
 )
 
-from utils_qa_generative import check_no_error
+from utils_qa import check_no_error
 
 # wandb
 import wandb
