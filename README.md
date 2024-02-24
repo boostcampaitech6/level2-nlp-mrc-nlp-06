@@ -1,4 +1,4 @@
-# Level2-klue-nlp-06: Relation Extraction
+# Level2-nlp-mrc-nlp-06: MRC (Machine Reading Comprehension)
 
 ## 📌 대회 설명
 ## MRC (2024.02.05 ~ 2024.02.23)
@@ -48,7 +48,7 @@
 
 1. Extractive MRC
 2. Generative MRC
-3. Combined MRC based on `pytorch-lightning` with `RAG` algorighm
+3. Combined MRC based on `pytorch-lightning` with `RAG` algorithm
 
 ## 📌 코드 구조
 
