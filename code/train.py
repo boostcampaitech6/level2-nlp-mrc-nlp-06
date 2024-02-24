@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from typing import NoReturn
 
-from arguments import DataTrainingArguments, ModelArguments
+from arguments_extractive import DataTrainingArguments, ModelArguments, CustomizedTrainingArguments
 from datasets import DatasetDict, load_from_disk, load_metric
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
@@ -16,11 +16,14 @@ from transformers import (
     DataCollatorWithPadding,
     EvalPrediction,
     HfArgumentParser,
-    TrainingArguments,
     set_seed,
+    EarlyStoppingCallback
 )
+
 from utils_qa import check_no_error, postprocess_qa_predictions
 
+import wandb
+wandb.login()
 
 seed = 2024
 deterministic = False
@@ -36,41 +39,34 @@ if deterministic: # cudnn random seed 고정 - 고정 시 학습 속도가 느�
 
 logger = logging.getLogger(__name__)
 
+# cache path 추가
+CACHE_PATH = "/data/ephemeral/level2-nlp-mrc-nlp-06/cache"
+if not os.path.exists(CACHE_PATH):
+    os.makedirs(CACHE_PATH)
+
+# wandb project 설정
+os.environ["WANDB_ENTITY"] = "be-our-friend"
+os.environ["WANDB_PROJECT"] = "MRC_HYW"
+os.environ["WANDB_LOG_MODEL"] = "checkpoint"
+os.environ["WANDB_NAME"] = "baseline"
+
 
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
 
+    # fp16 설정 가능
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments)
+        (ModelArguments, DataTrainingArguments, CustomizedTrainingArguments)
     )
-    model_args, data_args= parser.parse_args_into_dataclasses()
+
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     print(model_args.model_name_or_path)
 
-    training_args = TrainingArguments(
-        output_dir="../output/roberta-large",
-        do_train=True,
-        do_eval=True,
-        save_total_limit=3,
-        num_train_epochs=2,
-        learning_rate=1e-5,
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
-        evaluation_strategy="steps",
-        gradient_accumulation_steps=1,
-        eval_steps=1000,
-        logging_steps=1000,
-        save_steps=1000,
-        warmup_steps=100,
-        weight_decay=.0001,
-        load_best_model_at_end=True,
-        metric_for_best_model='exact_match',
-        overwrite_output_dir=True,
-    )
-
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
-    # training_args.per_device_train_batch_size = 2
+    # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
+
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -93,11 +89,15 @@ def main():
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
+
+
     config = AutoConfig.from_pretrained(
         model_args.config_name
         if model_args.config_name is not None
         else model_args.model_name_or_path,
+        cache_dir=CACHE_PATH
     )
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
         if model_args.tokenizer_name is not None
@@ -106,11 +106,13 @@ def main():
         # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
         # rust version이 비교적 속도가 빠릅니다.
         use_fast=True,
+        cache_dir=CACHE_PATH
     )
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
+        cache_dir=CACHE_PATH
     )
 
     print(
@@ -121,6 +123,8 @@ def main():
         type(model),
     )
 
+    print('## training_args', training_args)
+
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
@@ -128,7 +132,7 @@ def main():
 
 def run_mrc(
     data_args: DataTrainingArguments,
-    training_args: TrainingArguments,
+    training_args: CustomizedTrainingArguments,
     model_args: ModelArguments,
     datasets: DatasetDict,
     tokenizer,
@@ -167,7 +171,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            return_token_type_ids=False if 'roberta' in model_args.model_name_or_path else True, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            # return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -259,7 +263,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            return_token_type_ids=False if 'roberta' in model_args.model_name_or_path else True, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            # return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -334,9 +338,15 @@ def run_mrc(
     metric = load_metric("squad")
 
     def compute_metrics(p: EvalPrediction):
-        return metric.compute(predictions=p.predictions, references=p.label_ids)
+        eval_exact_match = metric.compute(
+            predictions=p.predictions, references=p.label_ids)['exact_match']
+        eval_f1 = metric.compute(
+            predictions=p.predictions, references=p.label_ids)['f1']
+        # return metric.compute(predictions=p.predictions, references=p.label_ids)
+        return {"eval_exact_match": eval_exact_match, "eval_f1": eval_f1}
 
     # Trainer 초기화
+    # early stopping 추가
     trainer = QuestionAnsweringTrainer(
         model=model,
         args=training_args,
@@ -347,10 +357,11 @@ def run_mrc(
         data_collator=data_collator,
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
     
     
-    # Training
+    # epoch 마다 validation 진행
     if training_args.do_train:
         if last_checkpoint is not None:
             checkpoint = last_checkpoint
@@ -358,7 +369,7 @@ def run_mrc(
             checkpoint = model_args.model_name_or_path
         else:
             checkpoint = None
-        train_result = trainer.train() # resume_from_checkpoint=checkpoint
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
 
         metrics = train_result.metrics
@@ -375,6 +386,7 @@ def run_mrc(
             for key, value in sorted(train_result.metrics.items()):
                 logger.info(f"  {key} = {value}")
                 writer.write(f"{key} = {value}\n")
+                wandb.log({str(key): value})
 
         # State 저장
         trainer.state.save_to_json(
@@ -383,13 +395,17 @@ def run_mrc(
 
     # Evaluation
     if training_args.do_eval:
+        print("Evaluate 진행")
         logger.info("*** Evaluate ***")
         metrics = trainer.evaluate()
+        print('## Evaluate metrics 기록 : ', metrics)
 
         metrics["eval_samples"] = len(eval_dataset)
 
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
+        wandb.log({"eval": metrics})
+
 
 
 if __name__ == "__main__":
