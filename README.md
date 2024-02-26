@@ -38,6 +38,10 @@
 
 ## 📌 실험한 것들
 
+#### Data Cleaning
+1. 반각문자 변환
+2. 특수문자 제거
+
 #### Retrieval
 
 1. Spare Passage Retrieval (SPR) : BM25, TF-IDF
