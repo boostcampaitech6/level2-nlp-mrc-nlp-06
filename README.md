@@ -60,6 +60,9 @@
 ┃ ┣ .keep
 ┃ ┗ PULL_REQUEST_TEMPLATE.md
 ┣ 📂code
+┃ ┣ 📂retrieval
+┃ ┃ ┣ retrieval_BM25.py
+┃ ┃ ┗ retrieval_TFIDF.py
 ┃ ┣ train.py
 ┃ ┣ trainer_qa.py
 ┃ ┣ utils_qa.py
@@ -69,7 +72,6 @@
 ┃ ┣ train_generative.py
 ┃ ┣ arguments_generative.py
 ┃ ┣ squad_generative.py
-┃ ┣ retrieval_bm25.py
 ┃ ┣ inference_bm25.py
 ┃ ┣ arguments_extractive.py
 ┃ ┣ retrieval_dpr.py
