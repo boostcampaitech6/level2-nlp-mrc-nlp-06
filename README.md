@@ -40,9 +40,8 @@
 
 #### Retrieval
 
-1. Spare Passage Retrieval (SPR)
-2. BM25 (SPR)
-3. Dense Passage Retrieval (DPR)
+1. Spare Passage Retrieval (SPR) : BM25, TF-IDF
+2. Dense Passage Retrieval (DPR)
 
 #### MRC
 
